@@ -1,0 +1,11 @@
+.DS_Store
+Thumbs.db
+db.json
+*.log
+node_modules/
+/public/
+source/opt-images/
+.deploy*/
+_multiconfig.yml
+.admin-tmp/
+.admin-password
