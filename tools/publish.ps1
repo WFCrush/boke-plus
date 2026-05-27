@@ -15,6 +15,13 @@ if (-not $changes) {
 $message = "update blog $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 git commit -m $message
 git push
+if ($LASTEXITCODE -ne 0) {
+  Write-Host '普通 git push 失败，正在改用 GitHub API 发布...'
+  node tools/github-api-publish.js
+  if ($LASTEXITCODE -ne 0) {
+    throw '发布到 GitHub 失败，请检查 GitHub 登录凭据。'
+  }
+}
 
 Write-Host '发布完成，稍等一会儿访问：'
 Write-Host 'https://wanfeng.888.moe/'

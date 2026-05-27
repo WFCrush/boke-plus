@@ -334,6 +334,15 @@ async function latestPagesRun() {
   return data.workflow_runs && data.workflow_runs[0];
 }
 
+async function pushWithGithubApi(job) {
+  addLog(job, '普通 git push 不可用，改用 GitHub API 发布...');
+  const apiPush = await runStreaming(job, 'node', ['tools/github-api-publish.js']);
+  if (!apiPush.ok) throw new Error('GitHub API 发布失败');
+  const match = apiPush.output.match(/API_PUSH_SHA=([0-9a-f]{40})/);
+  if (!match) throw new Error('GitHub API 发布成功但没有返回提交号');
+  return match[1];
+}
+
 async function checkPublicSite() {
   const res = await fetch(publicSiteUrl, { cache: 'no-store' });
   return res.ok;
@@ -419,6 +428,7 @@ async function runPublishJob(job) {
 
     const ahead = await runStreaming(job, 'git', ['status', '--short', '--branch']);
     if (ahead.output.includes('[ahead ')) shouldPush = true;
+    let expectedSha = '';
     if (shouldPush) {
       let push = await runStreaming(job, 'git', ['push']);
       if (!push.ok) {
@@ -426,11 +436,15 @@ async function runPublishJob(job) {
         await wait(10000);
         push = await runStreaming(job, 'git', ['push']);
       }
-      if (!push.ok) throw new Error('推送到 GitHub 失败，请确认 Clash Verge 已开启，或稍后重试');
+      if (!push.ok) {
+        expectedSha = await pushWithGithubApi(job);
+      }
     }
 
-    const head = await runStreaming(job, 'git', ['rev-parse', 'HEAD']);
-    const expectedSha = head.output.trim().split(/\r?\n/).pop();
+    if (shouldPush && !expectedSha) {
+      const head = await runStreaming(job, 'git', ['rev-parse', 'HEAD']);
+      expectedSha = head.output.trim().split(/\r?\n/).pop();
+    }
     await waitForDeployment(job, expectedSha);
     job.status = 'success';
     addLog(job, '发布完成，其他人刷新公开博客即可看到。');
