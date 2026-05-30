@@ -4,6 +4,9 @@ let currentFile = '';
 let currentTab = 'editor';
 let allPosts = [];
 let taxonomy = { categories: [], tags: [] };
+let allResources = [];
+let columns = [];
+let siteUrl = 'https://wanfeng.888.moe/';
 let isDirty = false;
 let autosaveTimer = null;
 
@@ -76,6 +79,7 @@ function postForm() {
     slug: '',
     categories: $('categories').value.trim(),
     tags: $('tags').value.trim(),
+    series: $('series').value.trim(),
     sticky: $('sticky').checked ? 100 : 0,
     date: dateStr ? dateStr.replace('T', ' ') + ':00' : '',
     content: $('content').value,
@@ -88,6 +92,8 @@ function fillEditor(post) {
   $('title').value = post.title || '';
   $('categories').value = Array.isArray(post.categories) ? post.categories.join(', ') : (post.categories || '');
   $('tags').value = Array.isArray(post.tags) ? post.tags.join(', ') : (post.tags || '');
+  renderSeriesOptions(post.series || '');
+  $('series').value = post.series || '';
   $('sticky').checked = Number(post.sticky) > 0;
   $('content').value = post.content || '';
   if (post.date) {
@@ -113,6 +119,7 @@ function newPost() {
     file: '',
     categories: '',
     tags: '',
+    series: '',
     sticky: 0,
     date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:00`,
     content: '',
@@ -132,8 +139,42 @@ async function loadTaxonomy() {
   try {
     taxonomy = await api('/api/taxonomy');
     const dl = $('categoryList');
-    dl.innerHTML = taxonomy.categories.map((c) => `<option value="${c}">`).join('');
+    const categorySet = new Set([...(taxonomy.categories || []), ...columns.map((c) => c.name)]);
+    dl.innerHTML = Array.from(categorySet).map((c) => `<option value="${escapeHtml(c)}">`).join('');
   } catch (_) {}
+}
+
+// ===== 仪表盘 =====
+async function loadDashboard() {
+  try {
+    const data = await api('/api/dashboard');
+    siteUrl = data.siteUrl || siteUrl;
+    const counts = data.counts || {};
+    $('dashboardCards').innerHTML = [
+      ['文章', counts.posts || 0],
+      ['专栏/分类', counts.categories || 0],
+      ['标签', counts.tags || 0],
+      ['资源文件', counts.resources || 0],
+      ['加密文件', counts.protectedResources || 0],
+      ['置顶文章', counts.sticky || 0],
+    ].map(([label, value]) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
+    $('dashboardLatest').innerHTML = (data.latest || []).length
+      ? data.latest.map((post) => `<button class="compact-item" data-file="${escapeHtml(post.file)}"><strong>${escapeHtml(post.title)}</strong><span>${String(post.date || '').slice(0, 16)}</span></button>`).join('')
+      : '<div class="empty">还没有文章</div>';
+    $$('#dashboardLatest [data-file]').forEach((btn) => {
+      btn.onclick = () => { openPost(btn.dataset.file); switchTab('editor'); };
+    });
+    const run = data.latestRun || {};
+    $('dashboardPublish').innerHTML = `
+      <div class="stat-row"><span>公开地址</span><strong><a href="${escapeHtml(siteUrl)}" target="_blank">打开</a></strong></div>
+      <div class="stat-row"><span>Actions</span><strong>${escapeHtml(run.status || '暂无')}</strong></div>
+      <div class="stat-row"><span>结果</span><strong>${escapeHtml(run.conclusion || '等待中')}</strong></div>
+      <div class="stat-row"><span>最后提交</span><strong>${escapeHtml((data.git && data.git.lastCommit) || '未知')}</strong></div>
+    `;
+    renderActivity(data.activity || [], 'dashboardActivity');
+  } catch (error) {
+    toast('读取总览失败：' + error.message, 'error');
+  }
 }
 
 function renderPostList() {
@@ -209,6 +250,148 @@ function renderStats() {
     <div class="stat-row"><span>标签数</span><strong>${tagSet.size}</strong></div>
     <div class="stat-row"><span>累计字数</span><strong>${totalWords.toLocaleString()}</strong></div>
   `;
+}
+
+// ===== 专栏管理 =====
+function renderSeriesOptions(selected = '') {
+  const select = $('series');
+  if (!select) return;
+  const options = ['<option value="">不归属专栏</option>']
+    .concat(columns.filter((item) => item.visible !== false).map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`));
+  if (selected && !columns.some((item) => item.name === selected)) {
+    options.push(`<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>`);
+  }
+  select.innerHTML = options.join('');
+  select.value = selected || '';
+}
+
+async function loadColumns() {
+  try {
+    columns = await api('/api/columns');
+    renderColumns();
+    renderSeriesOptions($('series') ? $('series').value : '');
+    await loadTaxonomy();
+  } catch (error) {
+    toast('读取专栏失败：' + error.message, 'error');
+  }
+}
+
+function renderColumns() {
+  const tbody = $('columnTableBody');
+  if (!tbody) return;
+  const keyword = (($('columnSearch') && $('columnSearch').value) || '').toLowerCase();
+  tbody.innerHTML = '';
+  columns.forEach((column, index) => {
+    if (keyword && !column.name.toLowerCase().includes(keyword) && !String(column.description || '').toLowerCase().includes(keyword)) return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input data-field="name" value="${escapeHtml(column.name || '')}" placeholder="专栏名"></td>
+      <td><input data-field="description" value="${escapeHtml(column.description || '')}" placeholder="专栏简介"></td>
+      <td><input data-field="cover" value="${escapeHtml(column.cover || '')}" placeholder="/img/cover.png"></td>
+      <td><input data-field="order" type="number" value="${Number(column.order) || index + 1}"></td>
+      <td><input data-field="visible" type="checkbox" ${column.visible !== false ? 'checked' : ''}></td>
+      <td>${Number(column.postCount || 0)}</td>
+      <td><button class="ghost-btn small danger-text" data-action="delete">删除</button></td>
+    `;
+    tr.querySelectorAll('[data-field]').forEach((input) => {
+      input.oninput = input.onchange = () => {
+        const field = input.dataset.field;
+        columns[index][field] = field === 'visible' ? input.checked : input.value;
+      };
+    });
+    tr.querySelector('[data-action="delete"]').onclick = async () => {
+      const ok = await confirmDialog('删除专栏', `确定删除「${column.name || '未命名专栏'}」吗？不会删除文章，只删除后台专栏记录。`, true);
+      if (!ok) return;
+      columns.splice(index, 1);
+      renderColumns();
+    };
+    tbody.appendChild(tr);
+  });
+  if (!tbody.children.length) tbody.innerHTML = '<tr><td colspan="7" class="empty">没有专栏</td></tr>';
+}
+
+function addColumn() {
+  columns.push({
+    id: `column-${Date.now()}`,
+    name: '新专栏',
+    slug: `column-${Date.now()}`,
+    description: '',
+    cover: '',
+    order: columns.length + 1,
+    visible: true,
+    postCount: 0,
+  });
+  renderColumns();
+}
+
+async function saveColumns() {
+  const cleaned = columns.map((item, index) => ({
+    ...item,
+    name: String(item.name || '').trim(),
+    description: String(item.description || '').trim(),
+    cover: String(item.cover || '').trim(),
+    order: Number(item.order) || index + 1,
+    visible: item.visible !== false,
+  })).filter((item) => item.name);
+  try {
+    columns = await api('/api/columns', { method: 'PUT', body: JSON.stringify({ columns: cleaned }) });
+    toast('专栏已保存，发布后 /columns/ 页面会更新', 'success', 3000);
+    renderColumns();
+    renderSeriesOptions($('series').value);
+    await loadTaxonomy();
+  } catch (error) {
+    toast('保存专栏失败：' + error.message, 'error');
+  }
+}
+
+// ===== 资源库 =====
+async function loadResources() {
+  try {
+    allResources = await api('/api/resources');
+    renderResources();
+  } catch (error) {
+    toast('读取资源库失败：' + error.message, 'error');
+  }
+}
+
+function renderResources() {
+  const tbody = $('resourceTableBody');
+  if (!tbody) return;
+  const keyword = (($('resourceSearch') && $('resourceSearch').value) || '').toLowerCase();
+  const filtered = allResources.filter((item) => item.name.toLowerCase().includes(keyword) || item.access.toLowerCase().includes(keyword));
+  tbody.innerHTML = '';
+  filtered.forEach((item) => {
+    const openUrl = item.openUrl || item.url;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(item.name)}</strong><br><span class="muted">${escapeHtml(item.ext || '')}</span></td>
+      <td><span class="pill ${item.kind === 'protected' ? 'pill-warning' : 'pill-ok'}">${escapeHtml(item.access)}</span></td>
+      <td>${formatSize(item.size)}</td>
+      <td>${formatDate(item.updatedAt)}</td>
+      <td>
+        <button class="ghost-btn small" data-action="copy">复制链接</button>
+        <button class="ghost-btn small" data-action="open">打开</button>
+        <button class="ghost-btn small danger-text" data-action="delete">删除</button>
+      </td>
+    `;
+    tr.querySelector('[data-action="copy"]').onclick = () => copyText(item.markdown || openUrl);
+    tr.querySelector('[data-action="open"]').onclick = () => window.open(openUrl, '_blank');
+    tr.querySelector('[data-action="delete"]').onclick = () => deleteResource(item);
+    tbody.appendChild(tr);
+  });
+  if (!filtered.length) tbody.innerHTML = '<tr><td colspan="5" class="empty">没有资源文件</td></tr>';
+}
+
+async function deleteResource(item) {
+  const ok = await confirmDialog('删除资源', `确定删除「${item.name}」吗？发布后线上也会消失。`, true);
+  if (!ok) return;
+  try {
+    await api('/api/resources', { method: 'DELETE', body: JSON.stringify({ kind: item.kind, name: item.name }) });
+    toast('资源已删除', 'success');
+    await loadResources();
+  } catch (error) {
+    toast('删除资源失败：' + error.message, 'error');
+  }
 }
 
 // ===== 打开/保存/删除 =====
@@ -399,17 +582,18 @@ async function tryRestoreDraft() {
 }
 
 // ===== 上传 =====
-async function uploadFile(file) {
+async function uploadFile(file, insert = true) {
   const form = new FormData();
   form.append('file', file);
   const res = await fetch('/api/upload', { method: 'POST', headers: { 'x-admin-token': token }, body: form });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || '上传失败');
-  insertAtCursor(`\n${data.markdown}\n`);
+  if (insert) insertAtCursor(`\n${data.markdown}\n`);
+  await loadResources().catch(() => {});
   toast('上传成功', 'success');
 }
 
-async function uploadProtectedFile(file) {
+async function uploadProtectedFile(file, insert = true) {
   const password = prompt('请设置这个文档的打开密码：');
   if (!password) return;
   const form = new FormData();
@@ -418,7 +602,8 @@ async function uploadProtectedFile(file) {
   const res = await fetch('/api/upload-protected', { method: 'POST', headers: { 'x-admin-token': token }, body: form });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || '上传失败');
-  insertAtCursor(`\n${data.markdown}\n`);
+  if (insert) insertAtCursor(`\n${data.markdown}\n`);
+  await loadResources().catch(() => {});
   toast('加密上传成功，请记好密码', 'success', 4000);
 }
 
@@ -455,6 +640,7 @@ async function importMarkdownFiles(files) {
 async function loadSiteConfig() {
   try {
     const cfg = await api('/api/site-config');
+    siteUrl = cfg.siteUrl || siteUrl;
     $('cfgTitle').value = cfg.title || '';
     $('cfgSubtitle').value = cfg.subtitle || '';
     $('cfgDescription').value = cfg.description || '';
@@ -516,6 +702,69 @@ async function saveContact() {
   }
 }
 
+// ===== 密码与日志 =====
+async function changePassword() {
+  const oldPassword = $('oldAdminPassword').value;
+  const newPassword = $('newAdminPassword').value;
+  if (!oldPassword || !newPassword) {
+    toast('请填写当前密码和新密码', 'error');
+    return;
+  }
+  const ok = await confirmDialog('修改后台密码', '修改后会退出当前登录，需要用新密码重新进入后台。确定继续吗？', false);
+  if (!ok) return;
+  try {
+    await api('/api/password', {
+      method: 'PUT',
+      body: JSON.stringify({ oldPassword, newPassword }),
+    });
+    toast('密码已修改，请重新登录', 'success', 2500);
+    localStorage.removeItem('bokeAdminToken');
+    setTimeout(() => location.reload(), 1200);
+  } catch (error) {
+    toast('修改失败：' + error.message, 'error');
+  }
+}
+
+async function loadActivity() {
+  try {
+    const entries = await api('/api/activity?limit=120');
+    renderActivity(entries, 'activityLog');
+  } catch (error) {
+    toast('读取操作日志失败：' + error.message, 'error');
+  }
+}
+
+function renderActivity(entries, targetId) {
+  const box = $(targetId);
+  if (!box) return;
+  if (!entries || !entries.length) {
+    box.innerHTML = '<div class="empty">暂无操作记录</div>';
+    return;
+  }
+  box.innerHTML = entries.map((item) => {
+    const detail = item.detail && Object.keys(item.detail).length ? ` · ${escapeHtml(JSON.stringify(item.detail))}` : '';
+    return `<div class="activity-item"><strong>${escapeHtml(actionLabel(item.action))}</strong><span>${formatDate(item.time)}${detail}</span></div>`;
+  }).join('');
+}
+
+function actionLabel(action) {
+  const map = {
+    login_success: '登录成功',
+    login_failed: '登录失败',
+    password_changed: '修改密码',
+    site_config_saved: '保存站点设置',
+    columns_saved: '保存专栏',
+    post_created: '新建文章',
+    post_saved: '保存文章',
+    post_deleted: '删除文章',
+    post_imported: '导入文章',
+    resource_uploaded: '上传资源',
+    resource_deleted: '删除资源',
+    publish_started: '开始发布',
+  };
+  return map[action] || action || '操作';
+}
+
 // ===== 发布 =====
 async function startPublish() {
   if (isDirty || !currentFile) {
@@ -558,8 +807,11 @@ function switchTab(tab) {
   currentTab = tab;
   $$('.nav-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.tab-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === tab));
+  if (tab === 'dashboard') loadDashboard();
+  if (tab === 'columns') loadColumns();
+  if (tab === 'resources') loadResources();
   if (tab === 'site') loadSiteConfig();
-  if (tab === 'more') loadContact();
+  if (tab === 'more') { loadContact(); loadActivity(); }
   if (tab === 'posts') renderPostTable();
 }
 
@@ -580,6 +832,30 @@ function applyStoredTheme() {
 // ===== 工具函数 =====
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatSize(size) {
+  const n = Number(size) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('已复制', 'success', 1200);
+  } catch (_) {
+    prompt('复制下面的内容：', text);
+  }
 }
 
 // ===== 事件绑定 =====
@@ -610,6 +886,7 @@ function bindEvents() {
   // 编辑器表单
   $('title').oninput = markDirty;
   $('categories').oninput = markDirty;
+  $('series').onchange = markDirty;
   $('tags').oninput = markDirty;
   $('postDate').oninput = markDirty;
   $('sticky').onchange = markDirty;
@@ -629,7 +906,7 @@ function bindEvents() {
   $('saveBtn').onclick = () => savePost();
   $('deleteBtn').onclick = deleteCurrentPost;
   $('publishBtn').onclick = () => startPublish().catch((e) => log(e.message));
-  $('openSiteBtn').onclick = () => window.open('https://wfcrush.github.io/boke/', '_blank');
+  $('openSiteBtn').onclick = () => window.open(siteUrl || 'https://wanfeng.888.moe/', '_blank');
 
   // 顶栏
   $('themeToggle').onclick = toggleTheme;
@@ -645,18 +922,28 @@ function bindEvents() {
   $('saveSiteCfg').onclick = saveSiteConfig;
   $('reloadSiteCfg').onclick = loadSiteConfig;
 
+  // 专栏与资源库
+  $('columnSearch').oninput = renderColumns;
+  $('addColumnBtn').onclick = addColumn;
+  $('saveColumnsBtn').onclick = saveColumns;
+  $('reloadColumnsBtn').onclick = loadColumns;
+  $('resourceSearch').oninput = renderResources;
+  $('resourceUploadBtn').onclick = () => $('fileInput').click();
+  $('resourceProtectedUploadBtn').onclick = () => $('protectedFileInput').click();
+
   // 联系方式
   $('saveContact').onclick = saveContact;
+  $('changePasswordBtn').onclick = changePassword;
 
   // 文件上传
   $('fileInput').onchange = () => {
     const [file] = $('fileInput').files;
-    if (file) uploadFile(file).catch((e) => toast(e.message, 'error'));
+    if (file) uploadFile(file, currentTab === 'editor').catch((e) => toast(e.message, 'error'));
     $('fileInput').value = '';
   };
   $('protectedFileInput').onchange = () => {
     const [file] = $('protectedFileInput').files;
-    if (file) uploadProtectedFile(file).catch((e) => toast(e.message, 'error'));
+    if (file) uploadProtectedFile(file, currentTab === 'editor').catch((e) => toast(e.message, 'error'));
     $('protectedFileInput').value = '';
   };
   $('mdImportInput').onchange = () => {
@@ -726,8 +1013,10 @@ function bindEvents() {
 async function afterLogin() {
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
+  await loadColumns();
   await loadPosts();
   await loadTaxonomy();
+  await loadDashboard();
   newPost();
   await tryRestoreDraft();
 }

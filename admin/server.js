@@ -15,6 +15,11 @@ const postsDir = path.join(root, 'source', '_posts');
 const uploadsDir = path.join(root, 'source', 'uploads');
 const secureDir = path.join(root, 'source', 'secure');
 const contactFile = path.join(root, 'source', 'contact', 'contact.json');
+const dataDir = path.join(root, 'source', '_data');
+const columnsFile = path.join(dataDir, 'admin-columns.json');
+const columnsPageFile = path.join(root, 'source', 'columns', 'index.md');
+const adminTmpDir = path.join(root, '.admin-tmp');
+const activityFile = path.join(adminTmpDir, 'activity.log');
 const publicDir = path.join(__dirname, 'public');
 const hexoConfig = path.join(root, '_config.yml');
 const publishDir = path.join(root, 'public');
@@ -33,7 +38,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.static(publicDir));
 
 const upload = multer({
-  dest: path.join(root, '.admin-tmp'),
+  dest: adminTmpDir,
   limits: { fileSize: 80 * 1024 * 1024 },
 });
 
@@ -102,6 +107,8 @@ async function ensureDirs() {
   await fs.mkdir(postsDir, { recursive: true });
   await fs.mkdir(uploadsDir, { recursive: true });
   await fs.mkdir(secureDir, { recursive: true });
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.mkdir(adminTmpDir, { recursive: true });
   await fs.mkdir(path.dirname(contactFile), { recursive: true });
 }
 
@@ -115,6 +122,9 @@ async function readPost(file) {
     date: parsed.data.date || '',
     categories: parsed.data.categories || [],
     tags: parsed.data.tags || [],
+    description: parsed.data.description || parsed.data.excerpt || '',
+    cover: parsed.data.cover || parsed.data.banner_img || '',
+    series: parsed.data.series || '',
     sticky: parsed.data.sticky || 0,
     content: parsed.content.trimStart(),
   };
@@ -136,11 +146,184 @@ function postMarkdown(input) {
     categories: normalizeList(input.categories),
     tags: normalizeList(input.tags),
   };
+  ['description', 'cover', 'series'].forEach((key) => {
+    const value = String(input[key] || '').trim();
+    if (value) data[key] = value;
+  });
   const stickyValue = Number(input.sticky);
   if (Number.isFinite(stickyValue) && stickyValue > 0) {
     data.sticky = stickyValue;
   }
   return matter.stringify(String(input.content || '').trimStart(), data);
+}
+
+async function readJsonFile(file, fallback) {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function writeJsonFile(file, data) {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+async function appendActivity(action, detail = {}) {
+  try {
+    await fs.mkdir(path.dirname(activityFile), { recursive: true });
+    const item = {
+      time: new Date().toISOString(),
+      action,
+      detail,
+    };
+    await fs.appendFile(activityFile, `${JSON.stringify(item)}\n`, 'utf8');
+  } catch (_) {
+    // Logging must never block the real admin action.
+  }
+}
+
+async function readActivity(limit = 80) {
+  try {
+    const raw = await fs.readFile(activityFile, 'utf8');
+    return raw
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-limit)
+      .reverse()
+      .map((line) => JSON.parse(line));
+  } catch (_) {
+    return [];
+  }
+}
+
+async function readAllPosts() {
+  await ensureDirs();
+  const files = (await fs.readdir(postsDir)).filter((file) => file.endsWith('.md'));
+  return Promise.all(files.map(readPost));
+}
+
+function encodedPath(parts) {
+  return parts.map((part) => encodeURIComponent(part)).join('/');
+}
+
+async function listResources() {
+  await ensureDirs();
+  const rootPath = await getSiteRoot();
+  const siteRoot = rootPath.replace(/\/$/, '');
+  const resources = [];
+  const addFile = async (kind, fullPath, publicPath, extra = {}) => {
+    const stat = await fs.stat(fullPath);
+    const name = path.basename(fullPath);
+    const ext = path.extname(name.replace(/\.locked$/i, '')).toLowerCase();
+    const isImage = /\.(png|jpe?g|gif|webp)$/i.test(name);
+    const url = `${siteRoot}/${publicPath.split('/').map(encodeURIComponent).join('/')}`;
+    resources.push({
+      kind,
+      name,
+      ext,
+      size: stat.size,
+      updatedAt: stat.mtime.toISOString(),
+      url,
+      markdown: isImage ? `![${name}](${url})` : `[${name}](${url})`,
+      ...extra,
+    });
+  };
+
+  try {
+    const uploads = await fs.readdir(uploadsDir);
+    for (const name of uploads) {
+      const fullPath = path.join(uploadsDir, name);
+      if ((await fs.stat(fullPath)).isFile()) {
+        await addFile('public', fullPath, `uploads/${name}`, { access: '公开' });
+      }
+    }
+  } catch (_) {}
+
+  const secureFilesDir = path.join(secureDir, 'files');
+  try {
+    const protectedFiles = await fs.readdir(secureFilesDir);
+    for (const name of protectedFiles) {
+      const fullPath = path.join(secureFilesDir, name);
+      if (!(await fs.stat(fullPath)).isFile()) continue;
+      const originalGuess = name.replace(/\.locked$/i, '');
+      const base = name.replace(/\.[^.]+\.locked$/i, '');
+      const manifest = path.join(secureDir, 'previews', base, 'manifest.json');
+      const hasPreview = fss.existsSync(manifest);
+      const previewPath = hasPreview ? `&preview=previews/${encodeURIComponent(base)}/manifest.json` : '';
+      const openUrl = `${siteRoot}/secure/?file=files/${encodeURIComponent(name)}&name=${encodeURIComponent(originalGuess)}${previewPath}`;
+      await addFile('protected', fullPath, `secure/files/${name}`, {
+        access: hasPreview ? '密码 + 预览' : '密码',
+        openUrl,
+        markdown: `[${originalGuess}](${openUrl})`,
+        preview: hasPreview,
+      });
+    }
+  } catch (_) {}
+
+  resources.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  return resources;
+}
+
+function sanitizeColumn(input, index = 0) {
+  const name = String(input.name || '').trim();
+  return {
+    id: String(input.id || safeName(name, `column-${Date.now()}-${index}`)).trim(),
+    name,
+    slug: safeName(input.slug || name, `column-${Date.now()}-${index}`),
+    description: String(input.description || '').trim(),
+    cover: String(input.cover || '').trim(),
+    order: Number.isFinite(Number(input.order)) ? Number(input.order) : index + 1,
+    visible: input.visible !== false,
+  };
+}
+
+async function readColumns() {
+  const saved = await readJsonFile(columnsFile, []);
+  const columns = Array.isArray(saved) ? saved.map(sanitizeColumn).filter((item) => item.name) : [];
+  const posts = await readAllPosts();
+  const counts = new Map();
+  posts.forEach((post) => {
+    normalizeList(post.categories).forEach((category) => counts.set(category, (counts.get(category) || 0) + 1));
+  });
+  columns.forEach((column) => { column.postCount = counts.get(column.name) || 0; });
+  Array.from(counts.keys()).forEach((name) => {
+    if (!columns.some((column) => column.name === name)) {
+      columns.push({
+        id: safeName(name, `column-${columns.length + 1}`),
+        name,
+        slug: safeName(name, `column-${columns.length + 1}`),
+        description: '',
+        cover: '',
+        order: columns.length + 1,
+        visible: true,
+        postCount: counts.get(name) || 0,
+      });
+    }
+  });
+  columns.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.name.localeCompare(b.name, 'zh'));
+  return columns;
+}
+
+async function writeColumns(columns) {
+  const cleaned = (Array.isArray(columns) ? columns : [])
+    .map(sanitizeColumn)
+    .filter((item) => item.name)
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.name.localeCompare(b.name, 'zh'));
+  await writeJsonFile(columnsFile, cleaned);
+  await fs.mkdir(path.dirname(columnsPageFile), { recursive: true });
+  const body = cleaned
+    .filter((column) => column.visible)
+    .map((column) => [
+      `## ${column.name}`,
+      column.description || '这个专栏还没有填写简介。',
+      '',
+      `[查看文章](/categories/${encodeURIComponent(column.name)}/)`,
+    ].join('\n'))
+    .join('\n\n---\n\n');
+  await fs.writeFile(columnsPageFile, `---\ntitle: 专栏\nlayout: page\n---\n\n# 专栏\n\n${body || '暂未创建专栏。'}\n`, 'utf8');
+  return cleaned;
 }
 
 function formatYamlValue(value) {
@@ -448,9 +631,11 @@ async function runPublishJob(job) {
     await waitForDeployment(job, expectedSha);
     job.status = 'success';
     addLog(job, '发布完成，其他人刷新公开博客即可看到。');
+    await appendActivity('publish_success', { jobId: job.id });
   } catch (error) {
     job.status = 'failed';
     addLog(job, `发布失败：${error.message}`);
+    await appendActivity('publish_failed', { jobId: job.id, error: error.message });
   }
   job.finishedAt = new Date().toISOString();
 }
@@ -504,20 +689,126 @@ async function makePreview(inputPath, ext, base, originalName) {
 
 app.use(assertLocal);
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   if (req.body.password !== password) {
+    await appendActivity('login_failed', { reason: 'password' });
     res.status(401).json({ error: '密码不正确' });
     return;
   }
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, Date.now());
+  await appendActivity('login_success');
   res.json({ token });
+});
+
+app.get('/api/dashboard', auth, async (_req, res) => {
+  await ensureDirs();
+  const posts = await readAllPosts();
+  const resources = await listResources();
+  const categories = new Set();
+  const tags = new Set();
+  posts.forEach((post) => {
+    normalizeList(post.categories).forEach((item) => categories.add(item));
+    normalizeList(post.tags).forEach((item) => tags.add(item));
+  });
+  const latest = posts
+    .slice()
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 5)
+    .map(({ content, ...post }) => post);
+  const gitStatus = await run('git', ['status', '--short', '--branch']);
+  const lastCommit = await run('git', ['log', '-1', '--pretty=%h %s']);
+  let latestRun = null;
+  try {
+    latestRun = await latestPagesRun();
+  } catch (_) {}
+  res.json({
+    siteUrl: publicSiteUrl,
+    github: { owner: githubOwner, repo: githubRepo },
+    counts: {
+      posts: posts.length,
+      sticky: posts.filter((post) => Number(post.sticky) > 0).length,
+      categories: categories.size,
+      tags: tags.size,
+      resources: resources.length,
+      protectedResources: resources.filter((item) => item.kind === 'protected').length,
+    },
+    latest,
+    git: {
+      status: gitStatus.output || '',
+      lastCommit: lastCommit.output || '',
+    },
+    latestRun,
+    activity: await readActivity(12),
+  });
+});
+
+app.get('/api/activity', auth, async (req, res) => {
+  res.json(await readActivity(Number(req.query.limit) || 120));
+});
+
+app.put('/api/password', auth, async (req, res) => {
+  const oldPassword = String(req.body.oldPassword || '');
+  const newPassword = String(req.body.newPassword || '').trim();
+  if (oldPassword !== password) {
+    await appendActivity('password_change_failed', { reason: 'old_password' });
+    res.status(403).json({ error: '原密码不正确' });
+    return;
+  }
+  if (newPassword.length < 8) {
+    res.status(400).json({ error: '新密码至少 8 位' });
+    return;
+  }
+  await fs.writeFile(passwordFile, `${newPassword}\n`, 'utf8');
+  password = newPassword;
+  sessions.clear();
+  await appendActivity('password_changed');
+  res.json({ ok: true });
+});
+
+app.get('/api/resources', auth, async (_req, res) => {
+  res.json(await listResources());
+});
+
+app.delete('/api/resources', auth, async (req, res) => {
+  const kind = String(req.body.kind || '');
+  const name = path.basename(String(req.body.name || ''));
+  if (!name || name !== String(req.body.name || '')) {
+    res.status(400).json({ error: '文件名不合法' });
+    return;
+  }
+  if (kind === 'public') {
+    await fs.rm(path.join(uploadsDir, name), { force: true });
+    await appendActivity('resource_deleted', { kind, name });
+    res.json({ ok: true });
+    return;
+  }
+  if (kind === 'protected') {
+    await fs.rm(path.join(secureDir, 'files', name), { force: true });
+    const base = name.replace(/\.[^.]+\.locked$/i, '');
+    if (base && base !== name) {
+      await fs.rm(path.join(secureDir, 'previews', base), { recursive: true, force: true });
+    }
+    await appendActivity('resource_deleted', { kind, name });
+    res.json({ ok: true });
+    return;
+  }
+  res.status(400).json({ error: '资源类型不合法' });
+});
+
+app.get('/api/columns', auth, async (_req, res) => {
+  res.json(await readColumns());
+});
+
+app.put('/api/columns', auth, async (req, res) => {
+  const columns = await writeColumns(req.body.columns || []);
+  await appendActivity('columns_saved', { count: columns.length });
+  res.json(columns);
 });
 
 app.get('/api/posts', auth, async (_req, res) => {
   await ensureDirs();
-  const files = (await fs.readdir(postsDir)).filter((file) => file.endsWith('.md'));
-  const posts = await Promise.all(files.map(readPost));
+  const posts = await readAllPosts();
   posts.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   res.json(posts.map(({ content, ...post }) => post));
 });
@@ -544,6 +835,7 @@ app.put('/api/contact', auth, async (req, res) => {
     note: String(req.body.note || '').trim(),
   };
   await fs.writeFile(contactFile, `${JSON.stringify(contact, null, 2)}\n`, 'utf8');
+  await appendActivity('contact_saved');
   res.json(contact);
 });
 
@@ -561,6 +853,7 @@ app.get('/api/site-config', auth, async (_req, res) => {
       subtitle: matchTop(main, 'subtitle'),
       description: matchTop(main, 'description'),
       author: matchTop(main, 'author'),
+      siteUrl: publicSiteUrl,
       navbarTitle: readFieldUnderSection(fluid, 'navbar', 'blog_title'),
       aboutName: readFieldUnderSection(fluid, 'about', 'name'),
       aboutIntro: readFieldUnderSection(fluid, 'about', 'intro'),
@@ -597,6 +890,9 @@ app.put('/api/site-config', auth, async (req, res) => {
     }
     await fs.writeFile(hexoConfig, main, 'utf8');
     await fs.writeFile(fluidPath, fluid, 'utf8');
+    await appendActivity('site_config_saved', {
+      title: typeof body.title === 'string' ? body.title.trim() : undefined,
+    });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: `保存站点配置失败：${error.message}` });
@@ -659,6 +955,7 @@ app.post('/api/posts', auth, async (req, res) => {
     return;
   } catch (_) {
     await fs.writeFile(fullPath, postMarkdown({ ...req.body, title }), 'utf8');
+    await appendActivity('post_created', { file, title });
     res.json(await readPost(file));
   }
 });
@@ -671,6 +968,7 @@ app.put('/api/posts/:file', auth, async (req, res) => {
     return;
   }
   await fs.writeFile(path.join(postsDir, file), postMarkdown(req.body), 'utf8');
+  await appendActivity('post_saved', { file, title: req.body.title || file });
   res.json(await readPost(file));
 });
 
@@ -681,6 +979,7 @@ app.delete('/api/posts/:file', auth, async (req, res) => {
     return;
   }
   await fs.rm(path.join(postsDir, file), { force: true });
+  await appendActivity('post_deleted', { file });
   res.json({ ok: true });
 });
 
@@ -702,6 +1001,7 @@ app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
   await fs.rename(req.file.path, target);
   const rootPath = await getSiteRoot();
   const publicUrl = `${rootPath.replace(/\/$/, '')}/uploads/${encodeURIComponent(name)}`;
+  await appendActivity('resource_uploaded', { kind: 'public', name, size: req.file.size });
   res.json({
     name,
     url: publicUrl,
@@ -742,6 +1042,7 @@ app.post('/api/upload-protected', auth, upload.single('file'), async (req, res) 
   const filePath = `files/${encodeURIComponent(encryptedName)}`;
   const previewPath = preview ? `&preview=previews/${encodeURIComponent(base)}/manifest.json` : '';
   const openUrl = `${rootPath.replace(/\/$/, '')}/secure/?file=${filePath}&name=${encodeURIComponent(req.file.originalname)}${previewPath}`;
+  await appendActivity('resource_uploaded', { kind: 'protected', name: req.file.originalname, encryptedName });
   res.json({
     name: req.file.originalname,
     url: openUrl,
@@ -783,6 +1084,7 @@ app.post('/api/import-md', auth, upload.single('file'), async (req, res) => {
     };
     await fs.writeFile(path.join(postsDir, file), postMarkdown(postBody), 'utf8');
     await fs.rm(req.file.path, { force: true });
+    await appendActivity('post_imported', { file, title });
     res.json(await readPost(file));
   } catch (error) {
     await fs.rm(req.file.path, { force: true });
@@ -793,6 +1095,7 @@ app.post('/api/import-md', auth, upload.single('file'), async (req, res) => {
 app.post('/api/publish', auth, async (_req, res) => {
   const job = makeJob();
   addLog(job, '发布任务已创建。');
+  appendActivity('publish_started', { jobId: job.id });
   runPublishJob(job);
   res.json({ jobId: job.id });
 });

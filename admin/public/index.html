@@ -27,8 +27,11 @@
         <div class="topbar-left">
           <strong class="brand-name">📝 博客后台</strong>
           <span class="brand-sep">|</span>
+          <button class="nav-tab" data-tab="dashboard">📊 总览</button>
           <button class="nav-tab active" data-tab="editor">✍️ 写作</button>
           <button class="nav-tab" data-tab="posts">📚 文章管理</button>
+          <button class="nav-tab" data-tab="columns">🗂 专栏</button>
+          <button class="nav-tab" data-tab="resources">🗃 资源库</button>
           <button class="nav-tab" data-tab="site">🎨 主页设置</button>
           <button class="nav-tab" data-tab="more">⚙️ 更多</button>
         </div>
@@ -39,6 +42,27 @@
           <button id="logoutBtn" class="icon-btn" title="退出登录">🚪</button>
         </div>
       </header>
+
+      <!-- TAB：总览 -->
+      <section class="tab-panel" data-panel="dashboard">
+        <div class="dashboard-shell">
+          <div id="dashboardCards" class="metric-grid"></div>
+          <div class="cards-grid no-pad">
+            <div class="card">
+              <h2>🕒 最近文章</h2>
+              <div id="dashboardLatest" class="compact-list">加载中...</div>
+            </div>
+            <div class="card">
+              <h2>🚀 发布状态</h2>
+              <div id="dashboardPublish" class="stats-box">加载中...</div>
+            </div>
+            <div class="card">
+              <h2>🧾 最近操作</h2>
+              <div id="dashboardActivity" class="compact-list">加载中...</div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- TAB 1：写作 -->
       <section class="tab-panel active" data-panel="editor">
@@ -68,6 +92,12 @@
                   <span>📁 分类</span>
                   <input id="categories" list="categoryList" placeholder="选一个">
                   <datalist id="categoryList"></datalist>
+                </label>
+                <label class="meta-field">
+                  <span>🗂 专栏</span>
+                  <select id="series">
+                    <option value="">不归属专栏</option>
+                  </select>
                 </label>
                 <label class="meta-field">
                   <span>🏷 标签</span>
@@ -137,6 +167,49 @@
             <button id="logToggle" class="icon-btn">▲</button>
           </div>
           <pre id="log">准备就绪。</pre>
+        </div>
+      </section>
+
+      <!-- TAB：专栏 -->
+      <section class="tab-panel" data-panel="columns">
+        <div class="card">
+          <h2>🗂 专栏管理</h2>
+          <p class="muted">专栏会保存到 source/_data/admin-columns.json，并自动生成 /columns/ 页面。文章编辑器中的“专栏”下拉也来自这里。</p>
+          <div class="filter-bar">
+            <input id="columnSearch" placeholder="🔍 搜索专栏..." />
+            <button id="addColumnBtn" class="primary">＋ 新增专栏</button>
+          </div>
+          <table class="post-table">
+            <thead>
+              <tr><th>名称</th><th>描述</th><th>封面</th><th>排序</th><th>显示</th><th>文章</th><th>操作</th></tr>
+            </thead>
+            <tbody id="columnTableBody"></tbody>
+          </table>
+          <div class="form-actions">
+            <button id="reloadColumnsBtn" class="ghost-btn">重新读取</button>
+            <button id="saveColumnsBtn" class="primary">💾 保存专栏</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB：资源库 -->
+      <section class="tab-panel" data-panel="resources">
+        <div class="card">
+          <h2>🗃 文件资源库</h2>
+          <p class="muted">管理已上传的公开文件和加密文件。删除后需要重新发布，线上网站才会同步变化。</p>
+          <div class="filter-bar">
+            <input id="resourceSearch" placeholder="🔍 搜索文件名..." />
+            <div class="inline-actions">
+              <button id="resourceUploadBtn" class="primary">上传公开文件</button>
+              <button id="resourceProtectedUploadBtn">上传加密文件</button>
+            </div>
+          </div>
+          <table class="post-table">
+            <thead>
+              <tr><th>文件</th><th>权限</th><th>大小</th><th>更新时间</th><th>操作</th></tr>
+            </thead>
+            <tbody id="resourceTableBody"></tbody>
+          </table>
         </div>
       </section>
 
@@ -247,8 +320,24 @@
           </div>
 
           <div class="card">
+            <h2>🔐 修改后台密码</h2>
+            <p class="muted">密码会保存到本机 .admin-password。修改后会退出当前登录。</p>
+            <label class="form-row"><span>当前密码</span><input id="oldAdminPassword" type="password" autocomplete="current-password"></label>
+            <label class="form-row"><span>新密码（至少 8 位）</span><input id="newAdminPassword" type="password" autocomplete="new-password"></label>
+            <div class="form-actions">
+              <button id="changePasswordBtn" class="danger">更新密码</button>
+            </div>
+          </div>
+
+          <div class="card">
             <h2>📊 博客统计</h2>
             <div id="statsBox" class="stats-box">加载中...</div>
+          </div>
+
+          <div class="card wide-card">
+            <h2>🧾 操作日志</h2>
+            <p class="muted">只保存在本机，用来回看最近做过哪些管理操作。</p>
+            <div id="activityLog" class="activity-log">加载中...</div>
           </div>
         </div>
       </section>
