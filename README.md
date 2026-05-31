@@ -9,7 +9,7 @@ D:\BOKE plus
 目标域名：
 
 ```text
-https://www.5yu.org/
+https://wf.5yu.org/
 ```
 
 ## 本地预览
@@ -64,13 +64,13 @@ source\CNAME
 内容是：
 
 ```text
-www.5yu.org
+wf.5yu.org
 ```
 
 还需要在域名平台后台给 `5yu.org` 添加 DNS 解析：
 
 ```text
-主机记录：www
+主机记录：wf
 记录类型：CNAME
 记录值：wfcrush.github.io
 ```
@@ -78,7 +78,7 @@ www.5yu.org
 DNS 生效后，在 GitHub 仓库 `Settings -> Pages -> Custom domain` 填入：
 
 ```text
-www.5yu.org
+wf.5yu.org
 ```
 
 并开启 `Enforce HTTPS`。

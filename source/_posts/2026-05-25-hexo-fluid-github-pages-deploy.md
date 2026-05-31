@@ -23,7 +23,7 @@ sticky: 10
 这个博客使用 Hexo 框架和 Fluid 主题，源码托管在 GitHub 仓库，最终通过 GitHub Pages 发布到公开地址：
 
 ```text
-https://www.5yu.org/
+https://wf.5yu.org/
 ```
 
 我把这篇文章作为博客维护手册，之后遇到发布失败、样式没更新、文章没出现等问题时，可以按这里的顺序排查。

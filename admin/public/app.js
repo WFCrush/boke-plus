@@ -6,7 +6,7 @@ let allPosts = [];
 let taxonomy = { categories: [], tags: [] };
 let allResources = [];
 let columns = [];
-let siteUrl = 'https://www.5yu.org/';
+let siteUrl = 'https://wf.5yu.org/';
 let isDirty = false;
 let autosaveTimer = null;
 
@@ -906,7 +906,7 @@ function bindEvents() {
   $('saveBtn').onclick = () => savePost();
   $('deleteBtn').onclick = deleteCurrentPost;
   $('publishBtn').onclick = () => startPublish().catch((e) => log(e.message));
-  $('openSiteBtn').onclick = () => window.open(siteUrl || 'https://www.5yu.org/', '_blank');
+  $('openSiteBtn').onclick = () => window.open(siteUrl || 'https://wf.5yu.org/', '_blank');
 
   // 顶栏
   $('themeToggle').onclick = toggleTheme;

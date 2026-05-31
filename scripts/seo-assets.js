@@ -103,7 +103,7 @@ hexo.extend.generator.register('robots', function () {
       'User-agent: *',
       'Allow: /',
       '',
-      'Sitemap: https://www.5yu.org/sitemap.xml',
+      'Sitemap: https://wf.5yu.org/sitemap.xml',
       ''
     ].join('\n')
   };
