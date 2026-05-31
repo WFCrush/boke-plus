@@ -13,7 +13,7 @@ timezone: Asia/Shanghai
 
 # URL
 ## Set your site url here. For example, if you use GitHub Page, set url as 'https://username.github.io/project'
-url: https://5yu.org
+url: https://www.5yu.org
 root: /
 permalink: :category/:title/
 permalink_defaults:
@@ -119,7 +119,7 @@ sitemap:
 nofollow:
   enable: true
   exclude:
-    - 5yu.org
+    - www.5yu.org
     - wfcrush.github.io
     - github.com
 

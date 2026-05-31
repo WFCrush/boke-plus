@@ -1,14 +1,14 @@
 ﻿# Hexo + Fluid 博客优化与维护说明
 
-本文档对应站点：`https://5yu.org/`，项目根目录：`D:\BOKE plus`。
+本文档对应站点：`https://www.5yu.org/`，项目根目录：`D:\BOKE plus`。
 
 ## 核心文件
 
-- `D:\BOKE plus\_config.yml`：Hexo 主配置，包含 `url: https://5yu.org` 和 `root: /`
+- `D:\BOKE plus\_config.yml`：Hexo 主配置，包含 `url: https://www.5yu.org` 和 `root: /`
 - `D:\BOKE plus\_config.fluid.yml`：Fluid 主题配置
 - `D:\BOKE plus\source\css\blog-custom.css`：自定义样式
 - `D:\BOKE plus\source\js\site-enhance.js`：自定义交互
-- `D:\BOKE plus\source\CNAME`：GitHub Pages 自定义域名，内容为 `5yu.org`
+- `D:\BOKE plus\source\CNAME`：GitHub Pages 自定义域名，内容为 `www.5yu.org`
 
 ## 已启用功能
 
@@ -38,7 +38,7 @@ Settings -> Pages -> Source -> GitHub Actions
 自定义域名：
 
 ```text
-Settings -> Pages -> Custom domain -> 5yu.org
+Settings -> Pages -> Custom domain -> www.5yu.org
 ```
 
 DNS 生效后开启：
@@ -49,10 +49,10 @@ Enforce HTTPS
 
 ## DNS 设置
 
-在 `localhost.cc` 后台给 `5yu.org` 添加：
+在域名平台后台给 `5yu.org` 添加：
 
 ```text
-主机记录：wanfeng
+主机记录：www
 记录类型：CNAME
 记录值：wfcrush.github.io
 ```
@@ -60,7 +60,7 @@ Enforce HTTPS
 如果后台要求填写完整主机名，就填：
 
 ```text
-5yu.org
+www.5yu.org
 ```
 
 ## 评论
