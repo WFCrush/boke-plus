@@ -1,4 +1,4 @@
-# 晚风の技术笔记
+﻿# 晚风の技术笔记
 
 这是一个基于 Hexo 和 Fluid 主题搭建的博客项目，目标目录：
 
@@ -9,7 +9,7 @@ D:\BOKE plus
 目标域名：
 
 ```text
-https://wanfeng.888.moe/
+https://5yu.org/
 ```
 
 ## 本地预览
@@ -64,7 +64,7 @@ source\CNAME
 内容是：
 
 ```text
-wanfeng.888.moe
+5yu.org
 ```
 
 还需要在域名平台 `localhost.cc` 后台添加 DNS 解析：
@@ -78,7 +78,8 @@ wanfeng.888.moe
 DNS 生效后，在 GitHub 仓库 `Settings -> Pages -> Custom domain` 填入：
 
 ```text
-wanfeng.888.moe
+5yu.org
 ```
 
 并开启 `Enforce HTTPS`。
+

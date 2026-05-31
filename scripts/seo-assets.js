@@ -103,7 +103,7 @@ hexo.extend.generator.register('robots', function () {
       'User-agent: *',
       'Allow: /',
       '',
-      'Sitemap: https://wanfeng.888.moe/sitemap.xml',
+      'Sitemap: https://5yu.org/sitemap.xml',
       ''
     ].join('\n')
   };
