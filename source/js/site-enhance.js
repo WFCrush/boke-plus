@@ -17,13 +17,30 @@
     return node ? node.textContent.replace(/\s+/g, ' ').trim() : '';
   }
 
+  function append(parent, tag, className, content) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (content !== undefined) node.textContent = content;
+    parent.appendChild(node);
+    return node;
+  }
+
+  function safeHref(href) {
+    if (!href) return '#';
+    try {
+      return new URL(href, location.origin).href;
+    } catch (error) {
+      return '#';
+    }
+  }
+
   function isPostPage() {
     return !!document.querySelector('.post-content .markdown-body');
   }
 
-  function isHomePage() {
-    var path = location.pathname.replace(/\/+$/, '/');
-    return path === '/';
+  function isHomeListPage() {
+    var path = location.pathname.replace(/\/+$/, '/') || '/';
+    return path === '/' || /^\/page\/\d+\/$/.test(path);
   }
 
   function enhanceImages() {
@@ -32,15 +49,14 @@
       if (!img.hasAttribute('decoding')) img.setAttribute('decoding', 'async');
       if (!img.getAttribute('alt')) {
         var title = document.querySelector('#seo-header, .index-header, title');
-        img.setAttribute('alt', text(title) || '晚风の技术笔记配图');
+        img.setAttribute('alt', text(title) || '技术文章配图');
       }
     });
   }
 
   function enhanceSearch() {
     var search = document.querySelector('.icon-search') || document.querySelector('[data-toggle="modal"][data-target*="search"]');
-    if (search && !search.dataset.shortcutReady) {
-      search.dataset.shortcutReady = 'true';
+    if (search) {
       search.setAttribute('title', '搜索 Ctrl+K');
       search.setAttribute('aria-label', '搜索 Ctrl+K');
     }
@@ -61,17 +77,14 @@
     if (!navbar) return;
     function update() {
       navbar.classList.toggle('boke-navbar-scrolled', window.scrollY > 24);
-      navbar.style.opacity = window.scrollY > 24 ? '0.98' : '0.92';
     }
     update();
     window.addEventListener('scroll', update, { passive: true });
   }
 
   function readingProgress() {
-    if (!isPostPage()) return;
-    var bar = document.createElement('div');
-    bar.className = 'boke-reading-progress';
-    document.body.appendChild(bar);
+    if (!isPostPage() || document.querySelector('.boke-reading-progress')) return;
+    var bar = append(document.body, 'div', 'boke-reading-progress');
 
     function update() {
       var article = document.querySelector('.post-content');
@@ -87,8 +100,9 @@
   }
 
   function addSchema() {
+    if (!isPostPage() || document.getElementById('boke-schema-blogposting')) return;
     var articleTitle = document.querySelector('#seo-header, .post-content h1, .markdown-body h1, .post-title');
-    if (!articleTitle || !isPostPage()) return;
+    if (!articleTitle) return;
     var image = document.querySelector('#banner');
     var bg = image && image.style.backgroundImage.match(/url\(["']?(.+?)["']?\)/);
     var data = {
@@ -100,92 +114,195 @@
       url: location.href,
       mainEntityOfPage: location.href,
       author: { '@type': 'Person', name: site.author, url: site.github },
-      publisher: {
-        '@type': 'Person',
-        name: site.author,
-        image: site.avatar
-      }
+      publisher: { '@type': 'Person', name: site.author, image: site.avatar }
     };
     var script = document.createElement('script');
+    script.id = 'boke-schema-blogposting';
     script.type = 'application/ld+json';
     script.textContent = JSON.stringify(data);
     document.head.appendChild(script);
   }
 
+  function collectTaxonomy(cards) {
+    var categoryMap = {};
+    var tagMap = {};
+    cards.forEach(function (card) {
+      card.querySelectorAll('.post-meta a, .post-metas a').forEach(function (link) {
+        var value = text(link).replace(/^#/, '');
+        var href = safeHref(link.getAttribute('href') || '#');
+        if (!value) return;
+        if (href.indexOf('/tags/') !== -1 || text(link).indexOf('#') === 0) tagMap[value] = href;
+        else categoryMap[value] = href;
+      });
+    });
+    return { categories: categoryMap, tags: tagMap };
+  }
+
+  function buildChipList(map) {
+    var keys = Object.keys(map);
+    if (!keys.length) {
+      var empty = document.createElement('p');
+      empty.className = 'boke-empty';
+      empty.textContent = '发布文章后自动显示。';
+      return empty;
+    }
+
+    var list = document.createElement('ul');
+    list.className = 'boke-chip-list';
+    keys.forEach(function (key) {
+      var item = append(list, 'li');
+      var link = append(item, 'a');
+      link.href = safeHref(map[key]);
+      link.textContent = key;
+    });
+    return list;
+  }
+
+  function buildInfoCard(postCount, categoryCount, tagCount) {
+    var card = document.createElement('section');
+    card.className = 'boke-sidebar-card boke-info-card';
+    append(card, 'h2', null, '博客信息');
+    var list = append(card, 'ul');
+    [
+      ['文章数目', postCount],
+      ['分类数目', categoryCount],
+      ['标签数目', tagCount],
+      ['最后更新', new Date().toLocaleDateString('zh-CN')]
+    ].forEach(function (row) {
+      var item = append(list, 'li');
+      append(item, 'span', null, row[0]);
+      append(item, 'b', null, row[1]);
+    });
+    return card;
+  }
+
+  function buildSimpleCard(title, child) {
+    var card = document.createElement('section');
+    card.className = 'boke-sidebar-card';
+    append(card, 'h2', null, title);
+    card.appendChild(child);
+    return card;
+  }
+
+  function buildRecentList(cards) {
+    var list = document.createElement('ol');
+    list.className = 'boke-hot-list';
+    cards.slice(0, 5).forEach(function (card) {
+      var source = card.querySelector('.index-header a');
+      if (!source) return;
+      var item = append(list, 'li');
+      var link = append(item, 'a');
+      link.href = safeHref(source.getAttribute('href'));
+      link.textContent = text(source);
+    });
+    return list;
+  }
+
   function buildHomeSidebar() {
-    if (!isHomePage()) return;
+    if (!isHomeListPage()) return;
     document.body.classList.add('boke-home');
     var cards = Array.prototype.slice.call(document.querySelectorAll('.index-card'));
     if (!cards.length || document.querySelector('.boke-home-layout')) return;
 
+    var board = document.getElementById('board');
+    if (board) board.classList.add('boke-home-board');
+
     var parent = cards[0].parentElement;
     var layout = document.createElement('div');
     layout.className = 'boke-home-layout';
-    var posts = document.createElement('div');
-    posts.className = 'boke-home-posts';
-    var sidebar = document.createElement('aside');
-    sidebar.className = 'boke-home-sidebar';
+    var posts = append(layout, 'div', 'boke-home-posts');
+    var sidebar = append(layout, 'aside', 'boke-home-sidebar');
     sidebar.setAttribute('aria-label', '博客侧边栏');
 
     parent.insertBefore(layout, cards[0]);
     cards.forEach(function (card) {
       posts.appendChild(card);
     });
-    layout.appendChild(posts);
-    layout.appendChild(sidebar);
 
-    var categoryMap = {};
-    var tagMap = {};
-    cards.forEach(function (card) {
-      card.querySelectorAll('.post-meta a').forEach(function (link) {
-        var value = text(link).replace(/^#/, '');
-        var href = link.getAttribute('href') || '#';
-        if (!value) return;
-        if (href.indexOf('/tags/') !== -1 || text(link).indexOf('#') === 0) tagMap[value] = href;
-        else categoryMap[value] = href;
-      });
+    var taxonomy = collectTaxonomy(cards);
+    sidebar.appendChild(buildInfoCard(cards.length, Object.keys(taxonomy.categories).length, Object.keys(taxonomy.tags).length));
+    sidebar.appendChild(buildSimpleCard('标签云', buildChipList(taxonomy.tags)));
+    sidebar.appendChild(buildSimpleCard('文章分类', buildChipList(taxonomy.categories)));
+    sidebar.appendChild(buildSimpleCard('近期文章', buildRecentList(cards)));
+  }
+
+  function buildHandsomeShell() {
+    document.body.classList.add('boke-handsome');
+    if (document.querySelector('.boke-left-rail')) return;
+
+    var rail = append(document.body, 'aside', 'boke-left-rail');
+    rail.setAttribute('aria-label', '站点导航');
+
+    var profile = append(rail, 'section', 'boke-rail-profile');
+    var avatar = append(profile, 'img');
+    avatar.src = site.avatar;
+    avatar.alt = site.author + '头像';
+    append(profile, 'h2', null, site.author);
+    append(profile, 'p', null, '人生无根笙魂隐，飘如陌上物废魂');
+
+    var nav = append(rail, 'nav', 'boke-rail-nav');
+    [
+      ['H', '首页', '/'],
+      ['A', '归档', '/archives/'],
+      ['C', '分类', '/categories/'],
+      ['T', '标签', '/tags/'],
+      ['I', '关于', '/about/']
+    ].forEach(function (item) {
+      var link = append(nav, 'a');
+      link.href = item[2];
+      append(link, 'span', null, item[0]);
+      link.appendChild(document.createTextNode(item[1]));
     });
 
-    var hot = cards.slice(0, 5).map(function (card) {
-      var link = card.querySelector('.index-header a');
-      return link ? '<li><a href="' + link.href + '">' + text(link) + '</a></li>' : '';
-    }).join('');
+    var badges = append(rail, 'section', 'boke-rail-badges');
+    addBadge(badges, site.github, 'GitHub', 'WFCrush', true);
+    addBadge(badges, '/', 'Theme', 'Fluid Glass');
+  }
 
-    function chips(map) {
-      var keys = Object.keys(map);
-      if (!keys.length) return '<p>发布文章后自动显示。</p>';
-      return '<ul class="boke-chip-list">' + keys.map(function (key) {
-        return '<li><a href="' + map[key] + '">' + key + '</a></li>';
-      }).join('') + '</ul>';
+  function addBadge(parent, href, label, value, external) {
+    var link = append(parent, 'a');
+    link.href = href;
+    if (external) {
+      link.target = '_blank';
+      link.rel = 'noopener';
     }
+    append(link, 'span', null, label);
+    append(link, 'b', null, value);
+    return link;
+  }
 
-    sidebar.innerHTML = [
-      '<section class="boke-sidebar-card"><div class="boke-profile"><img src="' + site.avatar + '" alt="晚风头像"><div><h2>晚风</h2><p>记录编程学习、技术实践和生活片段。</p></div></div></section>',
-      '<section class="boke-sidebar-card"><h2>文章分类</h2>' + chips(categoryMap) + '</section>',
-      '<section class="boke-sidebar-card"><h2>标签云</h2>' + chips(tagMap) + '</section>',
-      '<section class="boke-sidebar-card"><h2>热门文章</h2><ol class="boke-hot-list">' + hot + '</ol></section>',
-      '<section class="boke-sidebar-card"><h2>社交链接</h2><div class="boke-social-icons"><a href="' + site.github + '" target="_blank" rel="noopener" aria-label="GitHub">Git</a><a href="' + site.zhihu + '" target="_blank" rel="noopener" aria-label="知乎">知</a><a href="' + site.juejin + '" target="_blank" rel="noopener" aria-label="掘金">掘</a></div></section>'
-    ].join('');
+  function enhanceFooterBadges() {
+    var footer = document.querySelector('footer, #footer');
+    if (!footer || footer.querySelector('.boke-footer-badges')) return;
+    var badges = append(footer, 'div', 'boke-footer-badges');
+    addBadge(badges, '/', 'Copyright', site.author);
+    addBadge(badges, 'https://hexo.io', 'Engine', 'Hexo', true).rel = 'nofollow noopener';
+    addBadge(badges, 'https://github.com/fluid-dev/hexo-theme-fluid', 'Theme', 'Fluid', true).rel = 'nofollow noopener';
   }
 
   function selectionShare() {
-    if (!isPostPage()) return;
-    var pop = document.createElement('div');
-    pop.className = 'boke-share-pop';
-    pop.innerHTML = '<button type="button" data-share="twitter">Twitter</button><button type="button" data-share="weibo">微博</button>';
-    document.body.appendChild(pop);
+    if (!isPostPage() || document.querySelector('.boke-share-pop')) return;
+    if (window.matchMedia('(pointer: coarse), (max-width: 768px)').matches) return;
+
+    var pop = append(document.body, 'div', 'boke-share-pop');
+    ['Twitter', '微博'].forEach(function (label) {
+      var button = append(pop, 'button', null, label);
+      button.type = 'button';
+      button.dataset.share = label === '微博' ? 'weibo' : 'twitter';
+    });
 
     document.addEventListener('mouseup', function () {
       var sel = window.getSelection();
       var selected = sel ? sel.toString().trim() : '';
-      if (!selected || selected.length < 6) {
+      if (!sel || !sel.rangeCount || !selected || selected.length < 6) {
         pop.classList.remove('is-visible');
         return;
       }
-      var range = sel.getRangeAt(0);
-      var rect = range.getBoundingClientRect();
-      pop.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 180) + 'px';
-      pop.style.top = (rect.top + window.scrollY - 52) + 'px';
+      var rect = sel.getRangeAt(0).getBoundingClientRect();
+      var width = pop.offsetWidth || 170;
+      var height = pop.offsetHeight || 44;
+      pop.style.left = Math.min(Math.max(rect.left, 8), window.innerWidth - width - 8) + 'px';
+      pop.style.top = Math.min(Math.max(rect.top - height - 10, 8), window.innerHeight - height - 8) + 'px';
       pop.dataset.text = selected.slice(0, 180);
       pop.classList.add('is-visible');
     });
@@ -208,17 +325,32 @@
     if (!isPostPage() || document.querySelector('.boke-like-card')) return;
     var comments = document.getElementById('comments');
     var host = comments || document.querySelector('.post-content');
-    if (!host) return;
+    if (!host || !host.parentElement) return;
+
     var key = 'boke-like:' + location.pathname;
-    var count = Number(localStorage.getItem(key) || 0);
+    var count = 0;
+    try {
+      count = Number(localStorage.getItem(key) || 0);
+    } catch (error) {
+      count = 0;
+    }
+
     var card = document.createElement('section');
     card.className = 'boke-like-card';
-    card.innerHTML = '<div><h2>这篇笔记有帮助吗？</h2><p>无需登录，点一下会保存在当前浏览器。</p></div><button class="boke-like-button" type="button">点赞 <span>' + count + '</span></button>';
+    var copy = append(card, 'div');
+    append(copy, 'h2', null, '这篇笔记有帮助吗？');
+    append(copy, 'p', null, '无需登录，点一下会保存在当前浏览器。');
+    var button = append(card, 'button', 'boke-like-button');
+    button.type = 'button';
+    button.appendChild(document.createTextNode('点赞 '));
+    var number = append(button, 'span', null, count);
     host.parentElement.insertBefore(card, host);
-    card.querySelector('button').addEventListener('click', function () {
+    button.addEventListener('click', function () {
       count += 1;
-      localStorage.setItem(key, count);
-      card.querySelector('span').textContent = count;
+      try {
+        localStorage.setItem(key, count);
+      } catch (error) {}
+      number.textContent = count;
     });
   }
 
@@ -228,11 +360,17 @@
     if (!prevNext || document.querySelector('.boke-related-card')) return;
     var links = Array.prototype.slice.call(document.querySelectorAll('.post-prevnext a')).slice(0, 3);
     if (!links.length) return;
+
     var section = document.createElement('section');
     section.className = 'boke-sidebar-card boke-related-card';
-    section.innerHTML = '<h2>相关文章</h2><ol class="boke-hot-list">' + links.map(function (link) {
-      return '<li><a href="' + link.href + '">' + text(link) + '</a></li>';
-    }).join('') + '</ol>';
+    append(section, 'h2', null, '相关文章');
+    var list = append(section, 'ol', 'boke-hot-list');
+    links.forEach(function (source) {
+      var item = append(list, 'li');
+      var link = append(item, 'a');
+      link.href = safeHref(source.getAttribute('href'));
+      link.textContent = text(source);
+    });
     prevNext.parentElement.insertBefore(section, prevNext);
   }
 
@@ -250,57 +388,34 @@
     });
   }
 
-  function kuromiCursor() {
-    if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var cursor = document.createElement('div');
-    cursor.className = 'boke-kuromi-cursor';
-    document.body.appendChild(cursor);
-    var lastTrail = 0;
-
-    document.addEventListener('mousemove', function (event) {
-      cursor.style.opacity = '1';
-      cursor.style.transform = 'translate3d(' + (event.clientX + 12) + 'px,' + (event.clientY + 10) + 'px,0)';
-      var now = Date.now();
-      if (now - lastTrail > 70) {
-        lastTrail = now;
-        var trail = document.createElement('span');
-        trail.className = 'boke-kuromi-trail';
-        trail.style.left = event.clientX + 'px';
-        trail.style.top = event.clientY + 'px';
-        document.body.appendChild(trail);
-        setTimeout(function () {
-          trail.remove();
-        }, 720);
-      }
-    }, { passive: true });
-
-    document.addEventListener('mouseleave', function () {
-      cursor.style.opacity = '0';
-    });
-  }
-
   function enhance404() {
     if (document.body.textContent.indexOf('这页走丢了') === -1 && location.pathname.indexOf('404') === -1) return;
     var board = document.getElementById('board');
     if (!board || document.querySelector('.boke-404-search')) return;
-    var box = document.createElement('div');
-    box.className = 'boke-sidebar-card boke-404-search';
-    box.innerHTML = '<h2>找不到页面</h2><p>可以返回首页，或用 Ctrl+K 搜索已有技术笔记。</p><p><a href="/">返回首页</a></p>';
-    board.appendChild(box);
+    var box = append(board, 'div', 'boke-sidebar-card boke-404-search');
+    append(box, 'h2', null, '找不到页面');
+    append(box, 'p', null, '可以返回首页，或用 Ctrl+K 搜索已有技术笔记。');
+    var paragraph = append(box, 'p');
+    var link = append(paragraph, 'a', null, '返回首页');
+    link.href = '/';
   }
 
   ready(function () {
+    if (document.documentElement.dataset.bokeEnhanceReady === 'true') return;
+    document.documentElement.dataset.bokeEnhanceReady = 'true';
+
     enhanceImages();
     enhanceSearch();
     enhanceNavbar();
     readingProgress();
     addSchema();
+    buildHandsomeShell();
     buildHomeSidebar();
     selectionShare();
     likeCard();
     relatedPosts();
     subscribeAction();
-    kuromiCursor();
+    enhanceFooterBadges();
     enhance404();
   });
 })();
