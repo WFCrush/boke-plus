@@ -1,6 +1,7 @@
 (function () {
   var site = {
     author: '晚风',
+    description: '记录技术、生活与思考的数字花园。',
     avatar: '/img/avatar.png',
     github: 'https://github.com/WFCrush',
     zhihu: 'https://www.zhihu.com',
@@ -43,6 +44,27 @@
     return path === '/' || /^\/page\/\d+\/$/.test(path);
   }
 
+  function normalizePath(path) {
+    return (path || '/').replace(/\/+$/, '/') || '/';
+  }
+
+  function isActiveNavPath(href) {
+    var path = normalizePath(location.pathname);
+    var target = normalizePath(href);
+    if (target === '/') return path === '/';
+    return path.indexOf(target) === 0;
+  }
+
+  function setPageClasses() {
+    var path = normalizePath(location.pathname);
+    document.body.classList.toggle('boke-home', isHomeListPage());
+    document.body.classList.toggle('boke-post', isPostPage());
+    document.body.classList.toggle('boke-archive', path.indexOf('/archives/') === 0);
+    document.body.classList.toggle('boke-category', path.indexOf('/categories/') === 0);
+    document.body.classList.toggle('boke-tag', path.indexOf('/tags/') === 0);
+    document.body.classList.toggle('boke-about', path.indexOf('/about/') === 0);
+  }
+
   function enhanceImages() {
     document.querySelectorAll('img').forEach(function (img) {
       if (!img.hasAttribute('loading')) img.setAttribute('loading', 'lazy');
@@ -75,11 +97,169 @@
   function enhanceNavbar() {
     var navbar = document.getElementById('navbar');
     if (!navbar) return;
+    Array.prototype.slice.call(navbar.querySelectorAll('.nav-link[href], .dropdown-item[href]')).forEach(function (link) {
+      var href = link.getAttribute('href');
+      if (!href || href.indexOf('javascript') === 0) return;
+      if (isActiveNavPath(new URL(href, location.origin).pathname)) {
+        link.classList.add('active');
+        var dropdown = link.closest('.dropdown-menu');
+        if (dropdown && dropdown.previousElementSibling) {
+          dropdown.previousElementSibling.classList.add('active');
+        }
+      }
+    });
+
     function update() {
       navbar.classList.toggle('boke-navbar-scrolled', window.scrollY > 24);
     }
     update();
     window.addEventListener('scroll', update, { passive: true });
+  }
+
+  function estimateReadMinutes(card) {
+    var raw = [
+      text(card.querySelector('.index-header')),
+      text(card.querySelector('.index-excerpt'))
+    ].join(' ');
+    var cnChars = (raw.match(/[\u4e00-\u9fa5]/g) || []).length;
+    var words = raw.replace(/[\u4e00-\u9fa5]/g, ' ').trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.ceil((cnChars + words * 2) / 320));
+  }
+
+  function enhanceIndexCards() {
+    Array.prototype.slice.call(document.querySelectorAll('.index-card')).forEach(function (card, index) {
+      card.style.setProperty('--boke-card-order', Math.min(index, 8));
+      card.classList.toggle('boke-card-with-image', !!card.querySelector('.index-img'));
+      var source = card.querySelector('.index-header a');
+      if (source) card.setAttribute('aria-label', text(source));
+
+      var metas = card.querySelector('.index-btm');
+      if (metas && !metas.querySelector('.boke-readtime')) {
+        var item = append(metas, 'div', 'post-meta boke-readtime');
+        var icon = append(item, 'i', 'iconfont icon-clock-fill');
+        icon.setAttribute('aria-hidden', 'true');
+        item.appendChild(document.createTextNode('约 ' + estimateReadMinutes(card) + ' 分钟'));
+      }
+    });
+  }
+
+  function enhancePostSurface() {
+    if (!isPostPage()) return;
+    document.body.classList.add('boke-readable');
+    document.body.classList.toggle('boke-has-toc', !!document.getElementById('toc'));
+
+    var article = document.querySelector('.post-content');
+    if (!article) return;
+
+    var title = article.querySelector('#seo-header');
+    if (title && !article.querySelector('.boke-post-kicker')) {
+      var kicker = document.createElement('p');
+      kicker.className = 'boke-post-kicker';
+      kicker.textContent = 'Article / 技术笔记';
+      title.parentElement.insertBefore(kicker, title);
+    }
+
+    var firstParagraph = article.querySelector('.markdown-body > p');
+    if (firstParagraph && text(firstParagraph).length > 32) {
+      firstParagraph.classList.add('boke-lede');
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.post-prevnext a')).forEach(function (link) {
+      if (!link.getAttribute('aria-label')) link.setAttribute('aria-label', text(link));
+    });
+  }
+
+  function insertPageHeading(target, eyebrow, title, desc) {
+    if (!target || document.querySelector('.boke-page-heading')) return;
+    var heading = document.createElement('section');
+    heading.className = 'boke-page-heading';
+    append(heading, 'p', 'boke-page-eyebrow', eyebrow);
+    append(heading, 'h1', null, title);
+    append(heading, 'p', 'boke-page-desc', desc);
+    target.parentElement.insertBefore(heading, target);
+  }
+
+  function enhanceIndexPages() {
+    if (isHomeListPage() || isPostPage()) return;
+    var path = normalizePath(location.pathname);
+    var list = document.querySelector('.list-group');
+
+    if (path.indexOf('/archives/') === 0) {
+      insertPageHeading(list, 'Archive', '文章归档', '按时间回看所有笔记，快速定位每一次问题解决和项目复盘。');
+      return;
+    }
+
+    if (path === '/categories/') {
+      insertPageHeading(document.querySelector('.category-list'), 'Categories', '分类索引', '把相近主题收束到一起，让技术记录更容易被再次检索。');
+      return;
+    }
+
+    if (path.indexOf('/categories/') === 0) {
+      insertPageHeading(list, 'Category', '分类文章', '这里收录同一主题下的相关笔记。');
+      return;
+    }
+
+    if (path === '/tags/') {
+      insertPageHeading(document.querySelector('.tagcloud'), 'Tags', '标签云', '用关键词穿起文章之间的联系。');
+      return;
+    }
+
+    if (path.indexOf('/tags/') === 0) {
+      insertPageHeading(list, 'Tag', '标签文章', '同一标签下的文章汇总。');
+    }
+  }
+
+  function enhanceHomeHero() {
+    if (!isHomeListPage()) return;
+    var hero = document.querySelector('#banner .banner-text');
+    if (!hero || hero.querySelector('.boke-hero-title')) return;
+
+    var subtitle = hero.querySelector('.h2');
+    var fragment = document.createDocumentFragment();
+    var kicker = document.createElement('div');
+    kicker.className = 'boke-hero-kicker';
+    kicker.textContent = 'Digital Garden / 晚风手记';
+    fragment.appendChild(kicker);
+
+    var title = document.createElement('div');
+    title.className = 'boke-hero-title';
+    title.textContent = '晚风技术笔记';
+    fragment.appendChild(title);
+
+    var desc = document.createElement('p');
+    desc.className = 'boke-hero-desc';
+    desc.textContent = '记录技术、生活与思考的数字花园。把编程学习、项目复盘和日常观察，整理成可回看的线索。';
+    fragment.appendChild(desc);
+
+    hero.insertBefore(fragment, subtitle || hero.firstChild);
+
+    var tags = append(hero, 'div', 'boke-hero-tags');
+    ['技术实践', '项目复盘', '生活思考'].forEach(function (label) {
+      append(tags, 'span', null, label);
+    });
+
+    var actions = append(hero, 'div', 'boke-hero-actions');
+    var latest = append(actions, 'a', 'boke-hero-action boke-hero-action-primary', '阅读最新文章');
+    latest.href = '#board';
+    var about = append(actions, 'a', 'boke-hero-action boke-hero-action-ghost', '关于晚风');
+    about.href = '/about/';
+  }
+
+  function addHomeSectionHeader() {
+    if (!isHomeListPage()) return;
+    var layout = document.querySelector('.boke-home-layout');
+    if (!layout || document.querySelector('.boke-section-heading')) return;
+
+    var section = document.createElement('section');
+    section.className = 'boke-section-heading';
+    var copy = append(section, 'div');
+    append(copy, 'p', 'boke-section-eyebrow', 'Recently Published');
+    append(copy, 'h2', null, '最近更新');
+    append(copy, 'p', 'boke-section-copy', '从技术搭建到学习方法，留下能被再次调用的经验。');
+    var link = append(section, 'a', 'boke-section-link', '查看归档');
+    link.href = '/archives/';
+
+    layout.parentElement.insertBefore(section, layout);
   }
 
   function readingProgress() {
@@ -238,19 +418,22 @@
     avatar.src = site.avatar;
     avatar.alt = site.author + '头像';
     append(profile, 'h2', null, site.author);
-    append(profile, 'p', null, '人生无根笙魂隐，飘如陌上物废魂');
+    append(profile, 'p', null, site.description);
 
     var nav = append(rail, 'nav', 'boke-rail-nav');
     [
-      ['H', '首页', '/'],
-      ['A', '归档', '/archives/'],
-      ['C', '分类', '/categories/'],
-      ['T', '标签', '/tags/'],
-      ['I', '关于', '/about/']
+      ['iconfont icon-home-fill', '首页', '/'],
+      ['iconfont icon-archive-fill', '归档', '/archives/'],
+      ['iconfont icon-category-fill', '分类', '/categories/'],
+      ['iconfont icon-tags-fill', '标签', '/tags/'],
+      ['iconfont icon-user-fill', '关于', '/about/']
     ].forEach(function (item) {
       var link = append(nav, 'a');
       link.href = item[2];
-      append(link, 'span', null, item[0]);
+      if (isActiveNavPath(item[2])) link.classList.add('is-active');
+      var marker = append(link, 'span', 'boke-rail-icon');
+      var icon = append(marker, 'i', item[0]);
+      icon.setAttribute('aria-hidden', 'true');
       link.appendChild(document.createTextNode(item[1]));
     });
 
@@ -273,8 +456,13 @@
 
   function enhanceFooterBadges() {
     var footer = document.querySelector('footer, #footer');
-    if (!footer || footer.querySelector('.boke-footer-badges')) return;
-    var badges = append(footer, 'div', 'boke-footer-badges');
+    if (!footer) return;
+    var host = footer.querySelector('.footer-inner') || footer;
+    if (!footer.querySelector('.boke-footer-signature')) {
+      append(host, 'p', 'boke-footer-signature', '愿每一次记录，都成为下一次出发的坐标。');
+    }
+    if (footer.querySelector('.boke-footer-badges')) return;
+    var badges = append(host, 'div', 'boke-footer-badges');
     addBadge(badges, '/', 'Copyright', site.author);
     addBadge(badges, 'https://hexo.io', 'Engine', 'Hexo', true).rel = 'nofollow noopener';
     addBadge(badges, 'https://github.com/fluid-dev/hexo-theme-fluid', 'Theme', 'Fluid', true).rel = 'nofollow noopener';
@@ -394,7 +582,7 @@
     if (!board || document.querySelector('.boke-404-search')) return;
     var box = append(board, 'div', 'boke-sidebar-card boke-404-search');
     append(box, 'h2', null, '找不到页面');
-    append(box, 'p', null, '可以返回首页，或用 Ctrl+K 搜索已有技术笔记。');
+    append(box, 'p', null, '可以返回首页，或搜索已有技术笔记。');
     var paragraph = append(box, 'p');
     var link = append(paragraph, 'a', null, '返回首页');
     link.href = '/';
@@ -404,13 +592,19 @@
     if (document.documentElement.dataset.bokeEnhanceReady === 'true') return;
     document.documentElement.dataset.bokeEnhanceReady = 'true';
 
+    setPageClasses();
     enhanceImages();
     enhanceSearch();
     enhanceNavbar();
+    enhancePostSurface();
     readingProgress();
     addSchema();
+    enhanceHomeHero();
     buildHandsomeShell();
     buildHomeSidebar();
+    enhanceIndexCards();
+    addHomeSectionHeader();
+    enhanceIndexPages();
     selectionShare();
     likeCard();
     relatedPosts();
