@@ -1,0 +1,114 @@
+---
+layout: false
+---
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>星轨塔罗抽卡 | 晚风技术笔记</title>
+  <meta name="description" content="原创抽卡式塔罗占卜页面：输入问题，选择主题，开启星轨抽卡，获得塔罗牌指引。" />
+  <link rel="stylesheet" href="/css/tarot.css" />
+</head>
+<body>
+  <div class="aurora aurora-one"></div>
+  <div class="aurora aurora-two"></div>
+  <div class="starfield" aria-hidden="true"></div>
+
+  <main class="app-shell">
+    <section class="hero-card" aria-labelledby="page-title">
+      <a class="site-back" href="/">← 返回博客首页</a>
+      <div class="eyebrow">Mystic Wish · Tarot Pull</div>
+      <h1 id="page-title">星轨塔罗抽卡</h1>
+      <p class="hero-copy">把你的问题放进星轨。抽出的不是命令，是一张关于当下趋势、潜意识和行动空间的镜子。</p>
+
+      <div class="oracle-panel">
+        <label for="question">你想问什么？</label>
+        <textarea id="question" maxlength="120" placeholder="例如：我和他的关系未来三个月会怎样？我适合换工作吗？"></textarea>
+        <div class="input-meta"><span id="charCount">0</span>/120 · 留空也可以抽今日指引</div>
+
+        <fieldset class="topic-field">
+          <legend>选择卡池主题</legend>
+          <div class="topic-grid" role="radiogroup" aria-label="占卜主题">
+            <label><input type="radio" name="topic" value="general" checked /><span>综合</span></label>
+            <label><input type="radio" name="topic" value="love" /><span>感情</span></label>
+            <label><input type="radio" name="topic" value="career" /><span>事业</span></label>
+            <label><input type="radio" name="topic" value="study" /><span>学业</span></label>
+            <label><input type="radio" name="topic" value="self" /><span>自我</span></label>
+          </div>
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="summon-stage" aria-label="塔罗抽卡区域">
+      <div class="banner-strip">
+        <span>限定星辉 · 大阿卡纳</span>
+        <strong>22</strong>
+      </div>
+
+      <div id="portal" class="portal" aria-hidden="true">
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="orbit orbit-three"></div>
+        <div class="sigil">✦</div>
+        <div class="burst"></div>
+      </div>
+
+      <div id="card" class="tarot-card" aria-live="polite">
+        <div class="card-inner">
+          <div class="card-face card-back">
+            <div class="card-frame">
+              <span class="moon">☾</span>
+              <span class="back-title">TAROT</span>
+              <span class="back-subtitle">STAR RAIL</span>
+            </div>
+          </div>
+          <div class="card-face card-front">
+            <div class="card-frame">
+              <div id="cardNumber" class="card-number">?</div>
+              <div id="cardSymbol" class="card-symbol">✧</div>
+              <h2 id="cardName">等待抽取</h2>
+              <p id="cardEnglish">Awaiting</p>
+              <div id="cardOrientation" class="orientation-pill">未开启</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button id="drawButton" class="draw-button" type="button">
+        <span class="button-glow"></span>
+        <span id="buttonText">开启星轨抽卡</span>
+      </button>
+
+      <p class="safety-note">提示：本页面用于象征解读和自我反思，不替代医疗、法律或投资建议。</p>
+    </section>
+
+    <section id="resultPanel" class="result-panel hidden" aria-labelledby="result-title">
+      <div class="result-header">
+        <div>
+          <span id="topicBadge" class="topic-badge">综合指引</span>
+          <h2 id="result-title">你的星轨结果</h2>
+        </div>
+        <button id="resetButton" class="ghost-button" type="button">再抽一次</button>
+      </div>
+
+      <div class="result-grid">
+        <article class="result-block">
+          <h3>关键词</h3>
+          <p id="keywords">—</p>
+        </article>
+        <article class="result-block large">
+          <h3>牌面解读</h3>
+          <p id="meaning">—</p>
+        </article>
+        <article class="result-block large">
+          <h3>给你的行动建议</h3>
+          <p id="advice">—</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/tarot.js"></script>
+</body>
+</html>
